@@ -1,0 +1,2 @@
+--------- beginning of main
+01-15 10:55:05.151  1515  1654 I bbax    : (REDACTED) getHotwordActive::active query: %s, watch: %s, devices connected: %s
