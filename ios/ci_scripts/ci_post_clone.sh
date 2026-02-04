@@ -5,12 +5,15 @@
 
 set -e
 
-echo "Installing Node.js dependencies..."
-cd "$CI_PRIMARY_REPOSITORY_PATH"
-npm install
+echo "Installing Node.js..."
+brew install node
 
 echo "Installing CocoaPods..."
 brew install cocoapods
+
+echo "Installing Node.js dependencies..."
+cd "$CI_PRIMARY_REPOSITORY_PATH"
+npm install
 
 echo "Installing iOS dependencies..."
 cd "$CI_PRIMARY_REPOSITORY_PATH/ios"
