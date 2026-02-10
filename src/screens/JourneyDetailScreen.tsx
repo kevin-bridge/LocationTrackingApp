@@ -9,7 +9,7 @@ import {
   Platform,
   ScrollView,
 } from 'react-native';
-import MapView, {PROVIDER_GOOGLE, Polyline, Marker, Callout} from 'react-native-maps';
+import MapView, {Polyline, Marker, Callout} from 'react-native-maps';
 import ApiService from '../services/ApiService';
 import {API_ENDPOINTS} from '../config/api';
 import {Trip} from '../types';
@@ -205,7 +205,6 @@ const JourneyDetailScreen = ({navigation, route}: any) => {
       <MapView
         ref={mapRef}
         style={styles.map}
-        provider={PROVIDER_GOOGLE}
         initialRegion={{
           latitude: displayTrip.start_point.latitude,
           longitude: displayTrip.start_point.longitude,

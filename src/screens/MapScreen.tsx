@@ -9,7 +9,7 @@ import {
   StatusBar,
   Platform,
 } from 'react-native';
-import MapView, {PROVIDER_GOOGLE, Polyline} from 'react-native-maps';
+import MapView, {Polyline} from 'react-native-maps';
 import StorageService from '../services/StorageService';
 import {LocationData} from '../services/ForegroundLocationService';
 import LocationService from '../services/LocationService';
@@ -306,7 +306,6 @@ const MapScreen = ({navigation}: any) => {
       <MapView
         ref={mapRef}
         style={styles.map}
-        provider={PROVIDER_GOOGLE}
         initialRegion={{
           latitude: 37.78825,
           longitude: -122.4324,
