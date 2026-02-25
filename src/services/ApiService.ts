@@ -1,6 +1,9 @@
 import axios, {AxiosInstance, AxiosError} from 'axios';
 import {API_URL} from '../config/api';
 import StorageService from './StorageService';
+import {store} from '../store';
+import {clearUser} from '../store/slices/authSlice';
+import Toast from 'react-native-toast-message';
 
 class ApiService {
   private axiosInstance: AxiosInstance;
@@ -48,6 +51,19 @@ class ApiService {
           // Server responded with error status
           console.error('Response data:', error.response.data);
           console.error('Response status:', error.response.status);
+
+          // Handle token expiry - clear session and redirect to login
+          if (error.response.status === 401) {
+            console.log('[ApiService] Token expired or unauthorized. Clearing session...');
+            await StorageService.clearAuthTokens();
+            store.dispatch(clearUser());
+            Toast.show({
+              type: 'error',
+              text1: 'Session Expired',
+              text2: 'Please login again to continue.',
+              visibilityTime: 4000,
+            });
+          }
         } else if (error.request) {
           // Request was made but no response received
           console.error('No response received:', error.request);

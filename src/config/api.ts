@@ -19,6 +19,7 @@ export const API_ENDPOINTS = {
     POINTS: `${API_URL}/api/trips/points`,
     LIST: `${API_URL}/api/trips`,
     DETAIL: (tripId: string) => `${API_URL}/api/trips/${tripId}`,
+    GENERATE: `${API_URL}/api/trips/generate`,
   },
   COORDINATES: `${API_URL}/api/coordinates`,
   JOURNEYS: `${API_URL}/api/journeys`,

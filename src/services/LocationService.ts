@@ -1,5 +1,11 @@
-import Geolocation from '@react-native-community/geolocation';
+import BackgroundGeolocation, {
+  Location,
+  State,
+  ProviderChangeEvent,
+  Subscription,
+} from 'react-native-background-geolocation';
 import {API_ENDPOINTS} from '../config/api';
+import {BACKGROUND_GEOLOCATION_LICENSE, BG_GEO_CONFIG} from '../config/backgroundGeolocation';
 import {TripPoint, TripPointsUploadRequest} from '../types';
 import ApiService from './ApiService';
 
@@ -13,7 +19,7 @@ interface LocationCoords {
   speed: number | null;
 }
 
-interface Location {
+interface SimpleLocation {
   coords: LocationCoords;
   timestamp: number;
 }
@@ -23,8 +29,9 @@ class LocationService {
   private isTracking = false;
   private pointsBuffer: TripPoint[] = [];
   private uploadInterval: NodeJS.Timeout | null = null;
-  private watchId: number | null = null;
   private readonly UPLOAD_INTERVAL_MS = 30000; // Upload every 30 seconds
+  private locationCallback: ((location: SimpleLocation) => void) | null = null;
+  private locationSubscription: Subscription | null = null;
 
   // Authorization status constants
   public readonly AUTHORIZATION_STATUS_NOT_DETERMINED = 0;
@@ -36,33 +43,52 @@ class LocationService {
   /**
    * Initialize location service with configuration
    */
-  async initialize(apiUrl: string, authToken: string): Promise<any> {
+  async initialize(): Promise<any> {
     if (this.isInitialized) {
       console.log('[LocationService] Already initialized');
       return {enabled: this.isTracking};
     }
 
-    console.log('[LocationService] Initializing...');
+    console.log('[LocationService] Initializing Background Geolocation...');
 
-    // Configure geolocation
-    Geolocation.setRNConfiguration({
-      skipPermissionRequests: false,
-      authorizationLevel: 'always',
-    });
+    try {
+      // Configure Background Geolocation using centralized config + license key
+      await BackgroundGeolocation.ready({
+        ...BG_GEO_CONFIG,
+        license: BACKGROUND_GEOLOCATION_LICENSE,
+        // iOS specific (not in BG_GEO_CONFIG)
+        pausesLocationUpdatesAutomatically: false,
+        showsBackgroundLocationIndicator: true,
+      } as any);
 
-    this.isInitialized = true;
-    console.log('[LocationService] Initialized successfully');
-    return {enabled: false};
+      console.log('[LocationService] Background Geolocation configured successfully');
+
+      this.isInitialized = true;
+      return {enabled: false};
+    } catch (error) {
+      console.error('[LocationService] Initialization error:', error);
+      throw error;
+    }
   }
 
   /**
    * Request location permissions
    */
   async requestPermissions(): Promise<number> {
-    // For React Native Community Geolocation, permissions are handled at the native level
-    // Return AUTHORIZATION_STATUS_WHEN_IN_USE as default
-    console.log('[LocationService] Permissions requested');
-    return this.AUTHORIZATION_STATUS_WHEN_IN_USE;
+    try {
+      const status = await BackgroundGeolocation.requestPermission();
+      console.log('[LocationService] Permission status:', status);
+
+      // Convert to our authorization status constants
+      if (status === 3) return this.AUTHORIZATION_STATUS_ALWAYS;
+      if (status === 4) return this.AUTHORIZATION_STATUS_WHEN_IN_USE;
+      if (status === 2) return this.AUTHORIZATION_STATUS_DENIED;
+      if (status === 1) return this.AUTHORIZATION_STATUS_RESTRICTED;
+      return this.AUTHORIZATION_STATUS_NOT_DETERMINED;
+    } catch (error) {
+      console.error('[LocationService] Permission request error:', error);
+      return this.AUTHORIZATION_STATUS_NOT_DETERMINED;
+    }
   }
 
   /**
@@ -76,42 +102,49 @@ class LocationService {
 
     console.log('[LocationService] Starting location tracking...');
 
-    // Start watching position
-    this.watchId = Geolocation.watchPosition(
-      (position) => {
-        const location: Location = {
-          coords: {
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-            altitude: position.coords.altitude,
-            accuracy: position.coords.accuracy,
-            altitudeAccuracy: position.coords.altitudeAccuracy,
-            heading: position.coords.heading,
-            speed: position.coords.speed,
-          },
-          timestamp: position.timestamp,
-        };
+    try {
+      // Subscribe to location updates
+      this.locationSubscription = BackgroundGeolocation.onLocation(
+        (location: Location) => {
+          console.log('[LocationService] Location update:', location.coords.latitude, location.coords.longitude);
 
-        // Call registered callback (MapScreen will handle adding to buffer with address)
-        if (this.locationCallback) {
-          this.locationCallback(location);
-        }
-      },
-      (error) => {
-        console.error('[LocationService] Location error:', error);
-      },
-      {
-        enableHighAccuracy: true,
-        distanceFilter: 10, // Update every 10 meters
-        interval: 10000, // Android: 10 seconds
-        fastestInterval: 5000, // Android: 5 seconds
-      }
-    );
+          const simpleLocation: SimpleLocation = {
+            coords: {
+              latitude: location.coords.latitude,
+              longitude: location.coords.longitude,
+              altitude: location.coords.altitude ?? null,
+              accuracy: location.coords.accuracy,
+              altitudeAccuracy: location.coords.altitude_accuracy ?? null,
+              heading: location.coords.heading ?? null,
+              speed: location.coords.speed ?? null,
+            },
+            timestamp: new Date(location.timestamp).getTime(),
+          };
 
-    this.isTracking = true;
-    this.startUploadTimer();
-    console.log('[LocationService] Tracking started');
-    return {enabled: true};
+          // Call registered callback (MapScreen will handle adding to buffer with address)
+          if (this.locationCallback) {
+            this.locationCallback(simpleLocation);
+          }
+        },
+        (error) => {
+          console.error('[LocationService] Location error:', error);
+        },
+      );
+
+      // Start tracking
+      await BackgroundGeolocation.start();
+
+      // Explicitly start moving mode for immediate location updates
+      await BackgroundGeolocation.changePace(true);
+
+      this.isTracking = true;
+      this.startUploadTimer();
+      console.log('[LocationService] Tracking started with background geolocation');
+      return {enabled: true};
+    } catch (error) {
+      console.error('[LocationService] Error starting tracking:', error);
+      throw error;
+    }
   }
 
   /**
@@ -120,21 +153,43 @@ class LocationService {
   async stopTracking(): Promise<any> {
     console.log('[LocationService] Stopping tracking...');
 
-    // Upload remaining points before stopping
-    if (this.pointsBuffer.length > 0) {
-      await this.uploadPoints();
+    try {
+      // Upload remaining points before stopping
+      if (this.pointsBuffer.length > 0) {
+        await this.uploadPoints();
+      }
+
+      // Trigger trip generation so the trip appears in history immediately
+      try {
+        const api = ApiService.getInstance();
+        await api.post(API_ENDPOINTS.TRIPS.GENERATE, {});
+        console.log('[LocationService] Trip generation triggered successfully');
+      } catch (generateError) {
+        // Non-fatal: the backend batch job will process points within 2 minutes
+        console.warn('[LocationService] Trip generation request failed (batch job will handle it):', generateError);
+      }
+
+      this.stopUploadTimer();
+
+      // Stop movement mode
+      await BackgroundGeolocation.changePace(false);
+
+      // Unsubscribe from location updates
+      if (this.locationSubscription) {
+        this.locationSubscription.remove();
+        this.locationSubscription = null;
+      }
+
+      // Stop background geolocation
+      await BackgroundGeolocation.stop();
+
+      this.isTracking = false;
+      console.log('[LocationService] Tracking stopped');
+      return {enabled: false};
+    } catch (error) {
+      console.error('[LocationService] Error stopping tracking:', error);
+      throw error;
     }
-
-    this.stopUploadTimer();
-
-    if (this.watchId !== null) {
-      Geolocation.clearWatch(this.watchId);
-      this.watchId = null;
-    }
-
-    this.isTracking = false;
-    console.log('[LocationService] Tracking stopped');
-    return {enabled: false};
   }
 
   /**
@@ -147,7 +202,7 @@ class LocationService {
   /**
    * Convert Location to TripPoint format
    */
-  private locationToTripPoint(location: Location, address?: any): TripPoint {
+  private locationToTripPoint(location: SimpleLocation, address?: any): TripPoint {
     const point: TripPoint = {
       latitude: location.coords.latitude,
       longitude: location.coords.longitude,
@@ -182,9 +237,8 @@ class LocationService {
         points: pointsToUpload,
       };
 
-      // Log the payload being sent
-      const response = await api.post(API_ENDPOINTS.TRIPS.POINTS, request);
-      console.log(`✓ upload ${pointsToUpload.length} points success.`);
+      await api.post(API_ENDPOINTS.TRIPS.POINTS, request);
+      console.log(`✓ Uploaded ${pointsToUpload.length} points successfully`);
     } catch (error: any) {
       console.error('[LocationService] Failed to upload points:', error);
       console.error('[LocationService] Error details:', ApiService.getErrorMessage(error));
@@ -196,7 +250,7 @@ class LocationService {
   /**
    * Add point to buffer
    */
-  addPoint(location: Location, address?: any): void {
+  addPoint(location: SimpleLocation, address?: any): void {
     const point = this.locationToTripPoint(location, address);
     this.pointsBuffer.push(point);
     console.log(`[LocationService] Added point to buffer. Total points: ${this.pointsBuffer.length}`);
@@ -231,12 +285,10 @@ class LocationService {
     }
   }
 
-  private locationCallback: ((location: Location) => void) | null = null;
-
   /**
    * Listen to location updates
    */
-  onLocation(callback: (location: Location) => void): () => void {
+  onLocation(callback: (location: SimpleLocation) => void): () => void {
     this.locationCallback = callback;
     return () => {
       this.locationCallback = null;
@@ -246,42 +298,44 @@ class LocationService {
   /**
    * Get current location immediately
    */
-  async getCurrentLocation(): Promise<Location> {
-    return new Promise((resolve, reject) => {
-      Geolocation.getCurrentPosition(
-        (position) => {
-          const location: Location = {
-            coords: {
-              latitude: position.coords.latitude,
-              longitude: position.coords.longitude,
-              altitude: position.coords.altitude,
-              accuracy: position.coords.accuracy,
-              altitudeAccuracy: position.coords.altitudeAccuracy,
-              heading: position.coords.heading,
-              speed: position.coords.speed,
-            },
-            timestamp: position.timestamp,
-          };
-          resolve(location);
+  async getCurrentLocation(): Promise<SimpleLocation> {
+    try {
+      const location = await BackgroundGeolocation.getCurrentPosition({
+        timeout: 30,
+        maximumAge: 5000,
+        desiredAccuracy: 0,
+        samples: 1,
+      });
+
+      return {
+        coords: {
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude,
+          altitude: location.coords.altitude ?? null,
+          accuracy: location.coords.accuracy,
+          altitudeAccuracy: location.coords.altitude_accuracy ?? null,
+          heading: location.coords.heading ?? null,
+          speed: location.coords.speed ?? null,
         },
-        (error) => {
-          console.error('[LocationService] Get current location error:', error);
-          reject(error);
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 30000,
-          maximumAge: 5000,
-        }
-      );
-    });
+        timestamp: new Date(location.timestamp).getTime(),
+      };
+    } catch (error) {
+      console.error('[LocationService] Get current location error:', error);
+      throw error;
+    }
   }
 
   /**
    * Get current tracking state
    */
   async getState(): Promise<any> {
-    return {enabled: this.isTracking};
+    try {
+      const state: State = await BackgroundGeolocation.getState();
+      return {enabled: state.enabled};
+    } catch (error) {
+      console.error('[LocationService] Get state error:', error);
+      return {enabled: this.isTracking};
+    }
   }
 }
 

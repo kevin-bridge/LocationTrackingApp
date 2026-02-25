@@ -13,7 +13,6 @@ import MapView, {Polyline} from 'react-native-maps';
 import StorageService from '../services/StorageService';
 import {LocationData} from '../services/ForegroundLocationService';
 import LocationService from '../services/LocationService';
-import {API_URL} from '../config/api';
 import {Colors, Spacing, BorderRadius, Typography, Shadows} from '../theme';
 
 interface LocationCoords {
@@ -87,7 +86,7 @@ const MapScreen = ({navigation}: any) => {
       }
 
       console.log('[MapScreen] Initializing LocationService...');
-      await LocationService.initialize(API_URL, tokens.accessToken);
+      await LocationService.initialize();
 
       try {
         const location = await LocationService.getCurrentLocation();
@@ -109,7 +108,9 @@ const MapScreen = ({navigation}: any) => {
           );
         }
       } catch (error) {
-        console.log('[MapScreen] Could not get initial location:', error);
+        console.log('[MapScreen] Could not get initial location (this is normal in simulator):', error);
+        // Note: In simulator, set location via Features > Location menu
+        // The map will use the default region from initialRegion prop
       }
 
       setIsInitializing(false);
@@ -307,8 +308,8 @@ const MapScreen = ({navigation}: any) => {
         ref={mapRef}
         style={styles.map}
         initialRegion={{
-          latitude: 37.78825,
-          longitude: -122.4324,
+          latitude: 35.6895,
+          longitude: 139.6917,
           latitudeDelta: 0.0922,
           longitudeDelta: 0.0421,
         }}
