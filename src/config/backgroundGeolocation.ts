@@ -15,6 +15,7 @@ export const BG_GEO_CONFIG = {
   desiredAccuracy: 0, // Highest accuracy (GPS)
   distanceFilter: 10, // Minimum distance in meters between location updates
   stationaryRadius: 25, // When device is stationary, don't count movement within this radius
+  disableElasticity: true, // Prevent BGGeo from auto-expanding distanceFilter at higher speeds
 
   // Activity Recognition
   stopTimeout: 5, // Minutes to wait before entering stationary state

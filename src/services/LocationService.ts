@@ -33,6 +33,9 @@ class LocationService {
   private readonly UPLOAD_INTERVAL_MS = 30000; // Upload every 30 seconds
   private locationCallback: ((location: SimpleLocation) => void) | null = null;
   private locationSubscription: Subscription | null = null;
+  private motionChangeSubscription: Subscription | null = null;
+  private isPollingActive = false;
+  private watchPositionSubscription: {remove: () => void} | null = null;
 
   // Authorization status constants
   public readonly AUTHORIZATION_STATUS_NOT_DETERMINED = 0;
@@ -53,15 +56,21 @@ class LocationService {
     console.log('[LocationService] Initializing Background Geolocation...');
 
     try {
-      // Configure Background Geolocation using centralized config + license key
+      // Configure Background Geolocation using centralized config + license key.
+      // reset: true (iOS only) forces BGGeo to always use this config instead of
+      // the cached version from the first launch. Without it, ready() ignores all
+      // config changes on subsequent launches, so disableStopDetection never applies.
       await BackgroundGeolocation.ready({
         ...BG_GEO_CONFIG,
+        ...(Platform.OS === 'ios' ? {reset: true} : {}),
         license: Platform.OS === 'ios'
           ? BACKGROUND_GEOLOCATION_LICENSE_IOS
           : BACKGROUND_GEOLOCATION_LICENSE_ANDROID,
-        // iOS specific (not in BG_GEO_CONFIG)
+        // iOS specific
         pausesLocationUpdatesAutomatically: false,
         showsBackgroundLocationIndicator: true,
+        disableMotionActivityUpdates: Platform.OS === 'ios',
+        disableStopDetection: Platform.OS === 'ios',
       } as any);
 
       console.log('[LocationService] Background Geolocation configured successfully');
@@ -134,14 +143,39 @@ class LocationService {
         },
       );
 
+      // iOS simulator fix: BGGeo always runs an initial [motionchange] sequence on
+      // start() which determines the device is stationary (no real motion sensors).
+      // disableStopDetection prevents RE-ENTRY into stationary but NOT this initial
+      // startup sequence. We listen for isMoving: false and call changePace(true) to
+      // force moving mode. On subsequent sessions BGGeo may start in moving mode
+      // directly (skipping stationary), so watchPosition is always started below.
+      if (Platform.OS === 'ios') {
+        let forcedMovingMode = false;
+        this.motionChangeSubscription = BackgroundGeolocation.onMotionChange(
+          (event: any) => {
+            if (!event.isMoving && !forcedMovingMode) {
+              forcedMovingMode = true;
+              console.log('[LocationService] iOS: Initial stationary state detected, forcing moving mode...');
+              BackgroundGeolocation.changePace(true).catch((e: any) => {
+                console.warn('[LocationService] changePace(true) after motionChange failed:', e);
+              });
+            }
+          },
+        );
+      }
+
       // Start tracking
       await BackgroundGeolocation.start();
 
-      // Explicitly start moving mode for immediate location updates
-      await BackgroundGeolocation.changePace(true);
-
       this.isTracking = true;
       this.startUploadTimer();
+
+      // iOS: Always start watchPosition immediately after start() so updates flow
+      // on both first and subsequent sessions, regardless of BGGeo motion state.
+      if (Platform.OS === 'ios') {
+        this.startLocationPolling();
+      }
+
       console.log('[LocationService] Tracking started with background geolocation');
       return {enabled: true};
     } catch (error) {
@@ -186,6 +220,13 @@ class LocationService {
         this.locationSubscription.remove();
         this.locationSubscription = null;
       }
+
+      // Clean up iOS motionChange subscription and polling
+      if (this.motionChangeSubscription) {
+        this.motionChangeSubscription.remove();
+        this.motionChangeSubscription = null;
+      }
+      this.stopLocationPolling();
 
       // Stop background geolocation — non-fatal if already stopped
       try {
@@ -294,6 +335,73 @@ class LocationService {
       clearInterval(this.uploadInterval);
       this.uploadInterval = null;
       console.log('[LocationService] Upload timer stopped');
+    }
+  }
+
+  /**
+   * iOS: Use watchPosition every 5s to get consistent location updates.
+   * CLLocationManager's continuous distanceFilter-based updates are unreliable
+   * in the iOS simulator — startUpdatingLocation never fires didUpdateLocations.
+   * watchPosition uses its own one-shot CLLocationManager requests at a fixed
+   * interval, bypassing the stale lastLocation cache that getCurrentPosition hits.
+   * Started unconditionally on iOS so it works on both first and subsequent sessions.
+   */
+  private startLocationPolling(): void {
+    if (this.isPollingActive) {
+      return;
+    }
+    this.isPollingActive = true;
+    console.log('[LocationService] iOS: Starting watchPosition (5s interval)...');
+    // NOTE: BGGeo watchPosition argument order is (options, success, failure)
+    (BackgroundGeolocation as any).watchPosition(
+      // timeout: 300000 avoids the 60s default that terminates the watch when the
+      // iOS simulator GPS route pauses (no location for >60s fires error + stop).
+      // 5-minute timeout keeps watchPosition alive through any simulator GPS gaps.
+      // On real devices GPS is continuous so this doesn't affect production behavior.
+      {interval: 5000, desiredAccuracy: 0, persist: false, timeout: 300000},
+      (location: Location) => {
+        if (!this.isTracking) {
+          return;
+        }
+        console.log('[LocationService] iOS watchPosition:', location.coords.latitude, location.coords.longitude);
+        const simpleLocation: SimpleLocation = {
+          coords: {
+            latitude: location.coords.latitude,
+            longitude: location.coords.longitude,
+            altitude: location.coords.altitude ?? null,
+            accuracy: location.coords.accuracy,
+            altitudeAccuracy: location.coords.altitude_accuracy ?? null,
+            heading: location.coords.heading ?? null,
+            speed: location.coords.speed ?? null,
+          },
+          timestamp: new Date(location.timestamp).getTime(),
+        };
+        if (this.locationCallback) {
+          this.locationCallback(simpleLocation);
+        }
+      },
+      (error: any) => {
+        console.warn('[LocationService] iOS watchPosition error:', error);
+      },
+    ).then((subscription: {remove: () => void}) => {
+      if (!this.isPollingActive) {
+        // stopLocationPolling() was called before the promise resolved
+        subscription.remove();
+        return;
+      }
+      this.watchPositionSubscription = subscription;
+    }).catch((e: any) => {
+      this.isPollingActive = false;
+      console.warn('[LocationService] iOS watchPosition start failed:', e);
+    });
+  }
+
+  private stopLocationPolling(): void {
+    this.isPollingActive = false;
+    if (this.watchPositionSubscription) {
+      this.watchPositionSubscription.remove();
+      this.watchPositionSubscription = null;
+      console.log('[LocationService] iOS: watchPosition stopped');
     }
   }
 
