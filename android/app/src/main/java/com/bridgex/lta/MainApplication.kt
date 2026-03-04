@@ -1,4 +1,4 @@
-package com.locationtrackingapp
+package com.bridgex.lta
 
 import android.app.Application
 import com.facebook.react.PackageList

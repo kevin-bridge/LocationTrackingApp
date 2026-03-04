@@ -1,4 +1,4 @@
-import React, {useEffect, useState} from 'react';
+import React, {useCallback, useEffect, useState} from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   StatusBar,
   Platform,
 } from 'react-native';
+import {useFocusEffect} from '@react-navigation/native';
 import ApiService from '../services/ApiService';
 import {API_ENDPOINTS} from '../config/api';
 import {Trip} from '../types';
@@ -20,9 +21,11 @@ const HistoryScreen = ({navigation}: any) => {
   const [isLoading, setIsLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    fetchTrips();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      fetchTrips();
+    }, []),
+  );
 
   const fetchTrips = async () => {
     setIsLoading(true);

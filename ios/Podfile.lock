@@ -1,5 +1,8 @@
 PODS:
   - boost (1.83.0)
+  - CocoaLumberjack (3.8.5):
+    - CocoaLumberjack/Core (= 3.8.5)
+  - CocoaLumberjack/Core (3.8.5)
   - DoubleConversion (1.1.6)
   - FBLazyVector (0.73.2)
   - FBReactNativeSpec (0.73.2):
@@ -1073,6 +1076,12 @@ PODS:
     - React-jsi (= 0.73.2)
     - React-logger (= 0.73.2)
     - React-perflogger (= 0.73.2)
+  - RNBackgroundGeolocation (5.0.3):
+    - CocoaLumberjack (~> 3.8.5)
+    - glog
+    - RCT-Folly (= 2022.05.16.00)
+    - React-Core
+    - TSLocationManager (~> 4.0.10)
   - RNGestureHandler (2.14.0):
     - glog
     - RCT-Folly (= 2022.05.16.00)
@@ -1084,6 +1093,9 @@ PODS:
     - RCT-Folly (= 2022.05.16.00)
     - React-Core
   - SocketRocket (0.6.1)
+  - TSBackgroundFetch (4.0.6)
+  - TSLocationManager (4.0.14):
+    - TSBackgroundFetch (~> 4.0.6)
   - Yoga (1.14.0)
 
 DEPENDENCIES:
@@ -1142,6 +1154,7 @@ DEPENDENCIES:
   - React-runtimescheduler (from `../node_modules/react-native/ReactCommon/react/renderer/runtimescheduler`)
   - React-utils (from `../node_modules/react-native/ReactCommon/react/utils`)
   - ReactCommon/turbomodule/core (from `../node_modules/react-native/ReactCommon`)
+  - RNBackgroundGeolocation (from `../node_modules/react-native-background-geolocation`)
   - RNGestureHandler (from `../node_modules/react-native-gesture-handler`)
   - RNKeychain (from `../node_modules/react-native-keychain`)
   - RNScreens (from `../node_modules/react-native-screens`)
@@ -1149,11 +1162,14 @@ DEPENDENCIES:
 
 SPEC REPOS:
   trunk:
+    - CocoaLumberjack
     - fmt
     - libevent
     - MMKV
     - MMKVCore
     - SocketRocket
+    - TSBackgroundFetch
+    - TSLocationManager
 
 EXTERNAL SOURCES:
   boost:
@@ -1261,6 +1277,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon/react/utils"
   ReactCommon:
     :path: "../node_modules/react-native/ReactCommon"
+  RNBackgroundGeolocation:
+    :path: "../node_modules/react-native-background-geolocation"
   RNGestureHandler:
     :path: "../node_modules/react-native-gesture-handler"
   RNKeychain:
@@ -1272,6 +1290,7 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   boost: d3f49c53809116a5d38da093a8aa78bf551aed09
+  CocoaLumberjack: 6a459bc897d6d80bd1b8c78482ec7ad05dffc3f0
   DoubleConversion: fea03f2699887d960129cc54bba7e52542b6f953
   FBLazyVector: fbc4957d9aa695250b55d879c1d86f79d7e69ab4
   FBReactNativeSpec: 86de768f89901ef6ed3207cd686362189d64ac88
@@ -1327,10 +1346,13 @@ SPEC CHECKSUMS:
   React-runtimescheduler: 96207cc454b77b5f161c7be499db04781207f819
   React-utils: dd1e04ea7105dc58637939b50f1a74a5dd634ec4
   ReactCommon: 35e3b6a1c75d462acb0155e38e627b98d5bf586b
+  RNBackgroundGeolocation: 526b23208aea8a642a1acf57ea5c46324f342631
   RNGestureHandler: 7c72d2c6f7e1cfd960527a226d85d2f26d1be8cd
   RNKeychain: bbe2f6d5cc008920324acb49ef86ccc03d3b38e4
   RNScreens: 8d1521c6e375a79dbd4525efaf21704cc64ac0cf
   SocketRocket: f32cd54efbe0f095c4d7594881e52619cfe80b17
+  TSBackgroundFetch: 0afbeaae4e1132866e1d4b6e55265af26b5958ae
+  TSLocationManager: 6b8551c21b6faa56513cbb6ae4d62676ac395f34
   Yoga: 13c8ef87792450193e117976337b8527b49e8c03
 
 PODFILE CHECKSUM: 556123f547b31a612d1636ed6262c64eefd82c8b

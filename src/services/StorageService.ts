@@ -62,7 +62,7 @@ class StorageService {
     try {
       const tokens = JSON.stringify({accessToken, idToken, refreshToken});
       await Keychain.setGenericPassword('auth_tokens', tokens, {
-        service: 'com.locationtrackingapp',
+        service: 'com.bridgex.lta',
       });
     } catch (error) {
       console.error('Error saving auth tokens:', error);
@@ -79,7 +79,7 @@ class StorageService {
   } | null> {
     try {
       const credentials = await Keychain.getGenericPassword({
-        service: 'com.locationtrackingapp',
+        service: 'com.bridgex.lta',
       });
       if (credentials) {
         return JSON.parse(credentials.password);
@@ -97,7 +97,7 @@ class StorageService {
   async clearAuthTokens(): Promise<void> {
     try {
       await Keychain.resetGenericPassword({
-        service: 'com.locationtrackingapp',
+        service: 'com.bridgex.lta',
       });
     } catch (error) {
       console.error('Error clearing auth tokens:', error);

@@ -4,8 +4,9 @@ import BackgroundGeolocation, {
   ProviderChangeEvent,
   Subscription,
 } from 'react-native-background-geolocation';
+import {Platform} from 'react-native';
 import {API_ENDPOINTS} from '../config/api';
-import {BACKGROUND_GEOLOCATION_LICENSE, BG_GEO_CONFIG} from '../config/backgroundGeolocation';
+import {BACKGROUND_GEOLOCATION_LICENSE_IOS, BACKGROUND_GEOLOCATION_LICENSE_ANDROID, BG_GEO_CONFIG} from '../config/backgroundGeolocation';
 import {TripPoint, TripPointsUploadRequest} from '../types';
 import ApiService from './ApiService';
 
@@ -55,7 +56,9 @@ class LocationService {
       // Configure Background Geolocation using centralized config + license key
       await BackgroundGeolocation.ready({
         ...BG_GEO_CONFIG,
-        license: BACKGROUND_GEOLOCATION_LICENSE,
+        license: Platform.OS === 'ios'
+          ? BACKGROUND_GEOLOCATION_LICENSE_IOS
+          : BACKGROUND_GEOLOCATION_LICENSE_ANDROID,
         // iOS specific (not in BG_GEO_CONFIG)
         pausesLocationUpdatesAutomatically: false,
         showsBackgroundLocationIndicator: true,
@@ -171,8 +174,12 @@ class LocationService {
 
       this.stopUploadTimer();
 
-      // Stop movement mode
-      await BackgroundGeolocation.changePace(false);
+      // Stop movement mode — non-fatal if plugin is already stationary/disabled
+      try {
+        await BackgroundGeolocation.changePace(false);
+      } catch (paceError) {
+        console.warn('[LocationService] changePace(false) skipped:', paceError);
+      }
 
       // Unsubscribe from location updates
       if (this.locationSubscription) {
@@ -180,14 +187,19 @@ class LocationService {
         this.locationSubscription = null;
       }
 
-      // Stop background geolocation
-      await BackgroundGeolocation.stop();
+      // Stop background geolocation — non-fatal if already stopped
+      try {
+        await BackgroundGeolocation.stop();
+      } catch (stopError) {
+        console.warn('[LocationService] BackgroundGeolocation.stop() skipped:', stopError);
+      }
 
       this.isTracking = false;
       console.log('[LocationService] Tracking stopped');
       return {enabled: false};
     } catch (error) {
       console.error('[LocationService] Error stopping tracking:', error);
+      this.isTracking = false;
       throw error;
     }
   }
