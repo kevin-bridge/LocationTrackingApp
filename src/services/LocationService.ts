@@ -36,6 +36,7 @@ class LocationService {
   private motionChangeSubscription: Subscription | null = null;
   private isPollingActive = false;
   private watchPositionSubscription: {remove: () => void} | null = null;
+  private sessionPoints: SimpleLocation[] = [];
 
   // Authorization status constants
   public readonly AUTHORIZATION_STATUS_NOT_DETERMINED = 0;
@@ -133,7 +134,12 @@ class LocationService {
             timestamp: new Date(location.timestamp).getTime(),
           };
 
-          // Call registered callback (MapScreen will handle adding to buffer with address)
+          // Add to buffer immediately — do NOT wait for MapScreen's async address fetch.
+          // In background, iOS can suspend the address fetch network request, causing
+          // points to be silently dropped if addPoint() is deferred to MapScreen.
+          this.addPoint(simpleLocation);
+
+          // Notify MapScreen for display (map polyline, current location marker)
           if (this.locationCallback) {
             this.locationCallback(simpleLocation);
           }
@@ -236,6 +242,7 @@ class LocationService {
       }
 
       this.isTracking = false;
+      this.sessionPoints = [];
       console.log('[LocationService] Tracking stopped');
       return {enabled: false};
     } catch (error) {
@@ -306,7 +313,30 @@ class LocationService {
   addPoint(location: SimpleLocation, address?: any): void {
     const point = this.locationToTripPoint(location, address);
     this.pointsBuffer.push(point);
+    this.sessionPoints.push(location); // Keep full in-memory log for route rebuild on foreground resume
     console.log(`[LocationService] Added point to buffer. Total points: ${this.pointsBuffer.length}`);
+  }
+
+  /**
+   * Returns all location points collected since tracking started.
+   * Used by MapScreen to rebuild the route polyline after returning from background.
+   */
+  getSessionPoints(): SimpleLocation[] {
+    return [...this.sessionPoints];
+  }
+
+  /**
+   * Enrich a buffered point with address data after async geocoding completes.
+   * Points are added immediately (no address) for background reliability.
+   * MapScreen calls this after getAddressFromCoords resolves to attach the address
+   * before the 30s upload timer sends the batch to the server.
+   */
+  updatePointAddress(timestamp: number, address: any): void {
+    const timestampStr = new Date(timestamp).toISOString();
+    const point = this.pointsBuffer.find(p => p.timestamp === timestampStr);
+    if (point && address) {
+      point.address = address;
+    }
   }
 
   /**
@@ -376,6 +406,9 @@ class LocationService {
           },
           timestamp: new Date(location.timestamp).getTime(),
         };
+        // Add to buffer immediately (same reason as onLocation handler above)
+        this.addPoint(simpleLocation);
+
         if (this.locationCallback) {
           this.locationCallback(simpleLocation);
         }

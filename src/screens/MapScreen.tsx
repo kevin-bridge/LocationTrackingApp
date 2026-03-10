@@ -8,6 +8,8 @@ import {
   ActivityIndicator,
   StatusBar,
   Platform,
+  AppState,
+  AppStateStatus,
 } from 'react-native';
 import MapView, {Polyline} from 'react-native-maps';
 import StorageService from '../services/StorageService';
@@ -64,6 +66,7 @@ const MapScreen = ({navigation}: any) => {
   const [startTime, setStartTime] = useState<number | null>(null);
   const mapRef = useRef<MapView>(null);
   const locationUnsubscribe = useRef<(() => void) | null>(null);
+  const isTrackingRef = useRef(false);
 
   useEffect(() => {
     initializeTracking();
@@ -74,6 +77,36 @@ const MapScreen = ({navigation}: any) => {
       }
       LocationService.stopTracking();
     };
+  }, []);
+
+  // Keep isTrackingRef in sync so the AppState handler always sees current value
+  useEffect(() => {
+    isTrackingRef.current = isTracking;
+  }, [isTracking]);
+
+  // When app returns to foreground during an active tracking session, rebuild the
+  // route polyline from all points collected (including those received in background).
+  useEffect(() => {
+    const subscription = AppState.addEventListener(
+      'change',
+      (nextAppState: AppStateStatus) => {
+        if (nextAppState === 'active' && isTrackingRef.current) {
+          const sessionPoints = LocationService.getSessionPoints();
+          if (sessionPoints.length > 0) {
+            const rebuiltPath: RoutePoint[] = sessionPoints.map(loc => ({
+              latitude: loc.coords.latitude,
+              longitude: loc.coords.longitude,
+              timestamp: new Date(loc.timestamp).toISOString(),
+              speed: loc.coords.speed || undefined,
+              heading: loc.coords.heading || undefined,
+              accuracy: loc.coords.accuracy,
+            }));
+            setRoutePath(rebuiltPath);
+          }
+        }
+      },
+    );
+    return () => subscription.remove();
   }, []);
 
   const initializeTracking = async () => {
@@ -125,12 +158,13 @@ const MapScreen = ({navigation}: any) => {
     console.log('[MapScreen] Location updated');
     setCurrentLocation(location);
 
+    // Point is already added to the upload buffer by LocationService directly.
+    // Fetch address then enrich the buffered point before the 30s upload fires.
     const address = await getAddressFromCoords(
       location.coords.latitude,
       location.coords.longitude,
     );
-
-    LocationService.addPoint(location as any, address);
+    LocationService.updatePointAddress(location.timestamp, address);
 
     const routePoint: RoutePoint = {
       latitude: location.coords.latitude,
@@ -276,9 +310,19 @@ const MapScreen = ({navigation}: any) => {
       console.log('[MapScreen] Origin:', originAddress.formatted);
       console.log('[MapScreen] Destination:', destinationAddress.formatted);
 
-      Alert.alert('Journey Complete', `From: ${originAddress.formatted}\nTo: ${destinationAddress.formatted}\nDistance: ${distance.toFixed(2)} km\nDuration: ${(durationHours * 60).toFixed(0)} min\nPoints recorded: ${routePath.length}`);
+      Alert.alert(
+        'Journey Complete',
+        `From: ${originAddress.formatted}\nTo: ${destinationAddress.formatted}\nDistance: ${distance.toFixed(2)} km\nDuration: ${(durationHours * 60).toFixed(0)} min\nPoints recorded: ${routePath.length}`,
+        [
+          {text: 'View History', onPress: () => navigation.navigate('History')},
+          {text: 'Close'},
+        ],
+      );
     } else {
-      Alert.alert('Info', 'Location tracking stopped');
+      Alert.alert('Info', 'Location tracking stopped', [
+        {text: 'View History', onPress: () => navigation.navigate('History')},
+        {text: 'Close'},
+      ]);
     }
 
     setStartLocation(null);
