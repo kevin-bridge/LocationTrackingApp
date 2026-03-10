@@ -158,7 +158,7 @@ const HistoryScreen = ({navigation}: any) => {
         <View style={styles.statItem}>
           <Text style={styles.statIcon}>📍</Text>
           <Text style={styles.statValue}>
-            {item.points?.length || 0} points
+            {item.point_count ?? 0} points
           </Text>
         </View>
         <View style={styles.viewDetailsContainer}>

@@ -37,6 +37,7 @@ export interface Trip {
   end_point: TripPointDetail;
   start_time: string;
   end_time: string;
+  point_count?: number; // Included in list API response
   points?: TripPointDetail[]; // Only included in detail API response
   created_at: string;
   updated_at: string;
